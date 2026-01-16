@@ -32,10 +32,10 @@ parser.add_argument(
     ],
     help="Algorithm name. Choose from: happo, hatrpo, haa2c, haddpg, hatd3, hasac, had3qn, maddpg, matd3, mappo.",
 )
-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
-parser.add_argument("--task", type=str, default=None, help="Name of the task.")
-parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
-parser.add_argument("--num_env_steps", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--num_envs", type=int, default=16, help="Number of environments to simulate.")
+parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Rough-Anymal-C-Direct-v0", help="Name of the task.")
+parser.add_argument("--seed", type=int, default=1, help="Seed used for the environment")
+parser.add_argument("--num_env_steps", type=int, default=1000000, help="RL Policy training iterations.")
 parser.add_argument("--dir", type=str, default=None, help="folder with trained models")
 
 # append AppLauncher cli args
@@ -111,11 +111,28 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     total_rewards = torch.zeros((args["num_envs"], runner.num_agents, 1), dtype=torch.float32, device="cuda:0")
 
+    agent_names = list(obs.keys())   # ['robot_0', 'robot_1']
+    num_agents = len(agent_names)
+
     while simulation_app.is_running():
         with torch.inference_mode():
-            for agent_id in range(runner.num_agents):
+            for agent_id in range(num_agents):
+                # action, _, rnn_state = runner.actor[agent_id].get_actions(
+                #     obs[:, agent_id, :],
+                #     rnn_states[:, agent_id, :],
+                #     masks[:, agent_id, :],
+                #     None, 
+                #     None
+                # )
+                agent_name = agent_names[agent_id]
+                obs_agent = obs[agent_name]      # shape = [num_envs, obs_dim]
+
                 action, _, rnn_state = runner.actor[agent_id].get_actions(
-                    obs[:, agent_id, :], rnn_states[:, agent_id, :], masks[:, agent_id, :], None, None
+                    obs_agent,
+                    rnn_states[:, agent_id, :],
+                    masks[:, agent_id, :],
+                    None,
+                    None
                 )
                 action_space = action.shape[1]
                 actions[:, agent_id, :action_space] = action

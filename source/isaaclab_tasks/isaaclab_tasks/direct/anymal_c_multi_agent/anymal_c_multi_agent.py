@@ -17,6 +17,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
+from isaaclab.sensors import RayCaster, RayCasterCfg, patterns
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
@@ -193,11 +194,54 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
     max_bar_roll_angle_rad = 1
 
 
+@configclass
+class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
+    observation_space = 235
+    observation_spaces = {f"robot_{i}": 235 for i in range(2)}
+
+    terrain = TerrainImporterCfg(
+        prim_path="/World/ground",
+        terrain_type="generator",
+        terrain_generator=ROUGH_TERRAINS_CFG,
+        max_init_terrain_level=9,
+        collision_group=-1,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+        ),
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl",
+            project_uvw=True,
+        ),
+        debug_vis=False,
+    )
+
+    height_scanner_0 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot_0/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        attach_yaw_only=True,
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    height_scanner_1 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot_1/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        attach_yaw_only=True,
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+        debug_vis=False,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+
 class AnymalCMultiAgentBar(DirectMARLEnv):
-    cfg: AnymalCMultiAgentFlatEnvCfg
+    cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg
 
     def __init__(
-        self, cfg: AnymalCMultiAgentFlatEnvCfg, render_mode: str | None = None, **kwargs
+        self, cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg, render_mode: str | None = None, **kwargs
     ):
         super().__init__(cfg, render_mode, **kwargs)
         # Joint position command (deviation from default joint positions)
@@ -244,10 +288,17 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         self.scene.rigid_objects["object"] = self.object
 
         for i in range(self.num_robots):
-            self.robots[f"robot_{i}"] = Articulation(self.cfg.__dict__["robot_" + str(i)])
-            self.scene.articulations[f"robot_{i}"] = self.robots[f"robot_{i}"]
-            self.contact_sensors[f"robot_{i}"] = ContactSensor(self.cfg.__dict__["contact_sensor_" + str(i)])
-            self.scene.sensors[f"robot_{i}"] = self.contact_sensors[f"robot_{i}"]
+            robot_key = f"robot_{i}"
+            self.robots[robot_key] = Articulation(self.cfg.__dict__[robot_key])
+            self.scene.articulations[robot_key] = self.robots[robot_key]
+            
+            self.contact_sensors[robot_key] = ContactSensor(self.cfg.__dict__[f"contact_sensor_{i}"])
+            self.scene.sensors[robot_key] = self.contact_sensors[robot_key]
+
+            if hasattr(self.cfg, f"height_scanner_{i}"):
+                scanner_cfg = getattr(self.cfg, f"height_scanner_{i}")
+                self.height_scanners[robot_key] = RayCaster(scanner_cfg)
+                self.scene.sensors[f"height_scanner_{i}"] = self.height_scanners[robot_key]
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -278,20 +329,28 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         obs = {}
 
         for robot_id, robot in self.robots.items():
+            height_data = None
+
+            if isinstance(self.cfg, AnymalCMultiAgentRoughEnvCfg) and robot_id in self.height_scanners:
+                scanner = self.height_scanners[robot_id]
+                # 计算相对高度: 扫描点Z - 击中点Z - 0.5
+                height_data = (
+                    scanner.data.pos_w[:, 2].unsqueeze(1) - scanner.data.ray_hits_w[..., 2] - 0.5
+                ).clip(-1.0, 1.0)
+
+            obs_list = [
+                robot.data.root_com_lin_vel_b,
+                robot.data.root_com_ang_vel_b,
+                robot.data.projected_gravity_b,
+                self._commands,
+                robot.data.joint_pos - robot.data.default_joint_pos,
+                robot.data.joint_vel,
+                height_data,
+                self.actions[robot_id],
+            ]
+
             obs[robot_id] = torch.cat(
-                [
-                    tensor
-                    for tensor in (
-                        robot.data.root_com_lin_vel_b,
-                        robot.data.root_com_ang_vel_b,
-                        robot.data.projected_gravity_b,
-                        self._commands,
-                        robot.data.joint_pos - robot.data.default_joint_pos,
-                        robot.data.joint_vel,
-                        self.actions[robot_id],
-                    )
-                    if tensor is not None
-                ],
+                [tensor for tensor in obs_list if tensor is not None],
                 dim=-1,
             )
         # obs = torch.cat(obs, dim=0)
@@ -450,8 +509,10 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             # Reset robot state
             joint_pos = robot.data.default_joint_pos[env_ids]
             joint_vel = robot.data.default_joint_vel[env_ids]
-            default_root_state = robot.data.default_root_state[env_ids]
-            default_root_state[:, :3] += self._terrain.env_origins[env_ids]
+
+            default_root_state = robot.data.default_root_state[env_ids].clone()
+            default_root_state[:, :3] += self.scene.env_origins[env_ids]
+            
             robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
             robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
             robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)

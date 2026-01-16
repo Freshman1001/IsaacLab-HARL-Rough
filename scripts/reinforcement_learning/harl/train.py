@@ -12,17 +12,18 @@ import time
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Train an RL agent with HARL.")
-parser.add_argument("--video", action="store_true", help="Record videos during training.")
+parser.add_argument("--video", default=True, action="store_true", help="Record videos during training.")
 parser.add_argument("--video_length", type=int, default=500, help="Length of the recorded video (in steps).")
-parser.add_argument("--video_interval", type=int, default=20000, help="Interval between video recordings (in steps).")
-parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
-parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--video_interval", type=int, default=10000, help="Interval between video recordings (in steps).")
+parser.add_argument("--num_envs", type=int, default=4, help="Number of environments to simulate.")
+parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Rough-Anymal-C-Direct-v0", help="Name of the task.")
 parser.add_argument("--seed", type=int, default=1, help="Seed used for the environment")
-parser.add_argument("--save_interval", type=int, default=None, help="How often to save the model")
-parser.add_argument("--log_interval", type=int, default=None, help="How often to log outputs")
-parser.add_argument("--exp_name", type=str, default="test", help="Name of the Experiment")
-parser.add_argument("--num_env_steps", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument("--save_interval", type=int, default=10000, help="How often to save the model")
+parser.add_argument("--log_interval", type=int, default=1, help="How often to log outputs")
+parser.add_argument("--exp_name", type=str, default="multi_agent_anymal_rough_harl", help="Name of the Experiment")
+parser.add_argument("--num_env_steps", type=int, default=100000000, help="RL Policy training iterations.")
 parser.add_argument("--dir", type=str, default=None, help="folder with trained models")
+parser.add_argument("--headless", default=True, action="store_true", help="Run the simulation in headless mode.")
 
 parser.add_argument(
     "--algorithm",
