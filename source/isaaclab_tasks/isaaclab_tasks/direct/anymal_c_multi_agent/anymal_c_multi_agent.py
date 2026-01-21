@@ -86,21 +86,29 @@ def define_markers() -> VisualizationMarkers:
         markers={
             "sphere1": sim_utils.SphereCfg(
                 radius=0.1,
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.0, 0.0)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.8, 0.0, 0.0)
+                ),
             ),
             "sphere2": sim_utils.SphereCfg(
                 radius=0.1,
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 1.0)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.0, 1.0, 1.0)
+                ),
             ),
             "arrow1": sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/arrow_x.usd",
                 scale=(0.1, 0.1, 1.0),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.0, 0.0)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.8, 0.0, 0.0)
+                ),
             ),
             "arrow2": sim_utils.UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/UIElements/arrow_x.usd",
                 scale=(0.1, 0.1, 1.0),
-                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 1.0)),
+                visual_material=sim_utils.PreviewSurfaceCfg(
+                    diffuse_color=(0.0, 1.0, 1.0)
+                ),
             ),
         },
     )
@@ -149,22 +157,34 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
     )
 
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=6.0, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(
+        num_envs=1, env_spacing=6.0, replicate_physics=True
+    )
 
     # events
     events: EventCfg = EventCfg()
 
     # robot
-    robot_0: ArticulationCfg = ANYMAL_C_CFG.replace(prim_path="/World/envs/env_.*/Robot_0")
+    robot_0: ArticulationCfg = ANYMAL_C_CFG.replace(
+        prim_path="/World/envs/env_.*/Robot_0"
+    )
     contact_sensor_0: ContactSensorCfg = ContactSensorCfg(
-        prim_path="/World/envs/env_.*/Robot_0/.*", history_length=3, update_period=0.005, track_air_time=True
+        prim_path="/World/envs/env_.*/Robot_0/.*",
+        history_length=3,
+        update_period=0.005,
+        track_air_time=True,
     )
     robot_0.init_state.rot = (1.0, 0.0, 0.0, 1)
     robot_0.init_state.pos = (-1.0, 0.0, 0.5)
 
-    robot_1: ArticulationCfg = ANYMAL_C_CFG.replace(prim_path="/World/envs/env_.*/Robot_1")
+    robot_1: ArticulationCfg = ANYMAL_C_CFG.replace(
+        prim_path="/World/envs/env_.*/Robot_1"
+    )
     contact_sensor_1: ContactSensorCfg = ContactSensorCfg(
-        prim_path="/World/envs/env_.*/Robot_1/.*", history_length=3, update_period=0.005, track_air_time=True
+        prim_path="/World/envs/env_.*/Robot_1/.*",
+        history_length=3,
+        update_period=0.005,
+        track_air_time=True,
     )
     robot_1.init_state.rot = (1.0, 0.0, 0.0, 1)
     robot_1.init_state.pos = (1.0, 0.0, 0.5)
@@ -175,7 +195,9 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         spawn=sim_utils.CuboidCfg(
             size=(5, 0.1, 0.1),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.01),  # changed from 1.0 to 0.5
+            mass_props=sim_utils.MassPropertiesCfg(
+                mass=0.01
+            ),  # changed from 1.0 to 0.5
             collision_props=sim_utils.CollisionPropertiesCfg(),
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
         ),
@@ -188,7 +210,7 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
     lin_vel_reward_scale = 1.0
     yaw_rate_reward_scale = 1.0
 
-    bar_z_min_pos = .6
+    bar_z_min_pos = 0.6
 
     anymal_min_z_pos = 0.1
     max_bar_roll_angle_rad = 1
@@ -241,7 +263,10 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
     cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg
 
     def __init__(
-        self, cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg, render_mode: str | None = None, **kwargs
+        self,
+        cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg,
+        render_mode: str | None = None,
+        **kwargs,
     ):
         super().__init__(cfg, render_mode, **kwargs)
         # Joint position command (deviation from default joint positions)
@@ -291,14 +316,18 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             robot_key = f"robot_{i}"
             self.robots[robot_key] = Articulation(self.cfg.__dict__[robot_key])
             self.scene.articulations[robot_key] = self.robots[robot_key]
-            
-            self.contact_sensors[robot_key] = ContactSensor(self.cfg.__dict__[f"contact_sensor_{i}"])
+
+            self.contact_sensors[robot_key] = ContactSensor(
+                self.cfg.__dict__[f"contact_sensor_{i}"]
+            )
             self.scene.sensors[robot_key] = self.contact_sensors[robot_key]
 
             if hasattr(self.cfg, f"height_scanner_{i}"):
                 scanner_cfg = getattr(self.cfg, f"height_scanner_{i}")
                 self.height_scanners[robot_key] = RayCaster(scanner_cfg)
-                self.scene.sensors[f"height_scanner_{i}"] = self.height_scanners[robot_key]
+                self.scene.sensors[f"height_scanner_{i}"] = self.height_scanners[
+                    robot_key
+                ]
 
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
@@ -316,7 +345,8 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         for robot_id, robot in self.robots.items():
             self.actions[robot_id] = actions[robot_id].clone()
             self.processed_actions[robot_id] = (
-                self.cfg.action_scale * self.actions[robot_id] + robot.data.default_joint_pos
+                self.cfg.action_scale * self.actions[robot_id]
+                + robot.data.default_joint_pos
             )
 
     def _apply_action(self):
@@ -331,11 +361,16 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         for robot_id, robot in self.robots.items():
             height_data = None
 
-            if isinstance(self.cfg, AnymalCMultiAgentRoughEnvCfg) and robot_id in self.height_scanners:
+            if (
+                isinstance(self.cfg, AnymalCMultiAgentRoughEnvCfg)
+                and robot_id in self.height_scanners
+            ):
                 scanner = self.height_scanners[robot_id]
                 # 计算相对高度: 扫描点Z - 击中点Z - 0.5
                 height_data = (
-                    scanner.data.pos_w[:, 2].unsqueeze(1) - scanner.data.ray_hits_w[..., 2] - 0.5
+                    scanner.data.pos_w[:, 2].unsqueeze(1)
+                    - scanner.data.ray_hits_w[..., 2]
+                    - 0.5
                 ).clip(-1.0, 1.0)
 
             obs_list = [
@@ -358,7 +393,12 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         return obs
 
     def get_y_euler_from_quat(self, quaternion):
-        w, x, y, z = quaternion[:, 0], quaternion[:, 1], quaternion[:, 2], quaternion[:, 3]
+        w, x, y, z = (
+            quaternion[:, 0],
+            quaternion[:, 1],
+            quaternion[:, 2],
+            quaternion[:, 3],
+        )
         y_euler_angle = torch.arcsin(2 * (w * y - z * x))
         return y_euler_angle
 
@@ -407,7 +447,12 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         )
 
         marker_scales = torch.concat(
-            [torch.ones((3 * self._commands.shape[0], 3), device=self.device), scale1, scale2], dim=0
+            [
+                torch.ones((3 * self._commands.shape[0], 3), device=self.device),
+                scale1,
+                scale2,
+            ],
+            dim=0,
         )
 
         marker_locations = torch.concat(
@@ -422,27 +467,41 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         )
 
         self.my_visualizer.visualize(
-            marker_locations, marker_orientations, scales=marker_scales, marker_indices=marker_ids
+            marker_locations,
+            marker_orientations,
+            scales=marker_scales,
+            marker_indices=marker_ids,
         )
 
     def _get_rewards(self) -> dict:
-        bar_commands = torch.stack([-self._commands[:, 1], self._commands[:, 0], self._commands[:, 2]]).t()
+        bar_commands = torch.stack(
+            [-self._commands[:, 1], self._commands[:, 0], self._commands[:, 2]]
+        ).t()
 
         self._draw_markers(bar_commands)
 
         # xy linear velocity tracking
         lin_vel_error = torch.sum(
-            torch.square(bar_commands[:, :2] - self.object.data.root_com_lin_vel_b[:, :2]), dim=1
+            torch.square(
+                bar_commands[:, :2] - self.object.data.root_com_lin_vel_b[:, :2]
+            ),
+            dim=1,
         )
         lin_vel_error_mapped = torch.exp(-lin_vel_error)
 
         # yaw rate tracking
-        yaw_rate_error = torch.square(self._commands[:, 2] - self.object.data.root_com_ang_vel_b[:, 2])
+        yaw_rate_error = torch.square(
+            self._commands[:, 2] - self.object.data.root_com_ang_vel_b[:, 2]
+        )
         yaw_rate_error_mapped = torch.exp(-yaw_rate_error)
 
         rewards = {
-            "track_lin_vel_xy_exp": lin_vel_error_mapped * self.cfg.lin_vel_reward_scale * self.step_dt,
-            "track_ang_vel_z_exp": yaw_rate_error_mapped * self.cfg.yaw_rate_reward_scale * self.step_dt,
+            "track_lin_vel_xy_exp": lin_vel_error_mapped
+            * self.cfg.lin_vel_reward_scale
+            * self.step_dt,
+            "track_ang_vel_z_exp": yaw_rate_error_mapped
+            * self.cfg.yaw_rate_reward_scale
+            * self.step_dt,
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
@@ -450,20 +509,24 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         for key, value in rewards.items():
             self._episode_sums[key] += value
 
-        return {"robot_0":reward, "robot_1":reward}
+        return {"robot_0": reward, "robot_1": reward}
 
     def _get_anymal_fallen(self):
         agent_dones = []
 
         for _, robot in self.robots.items():
-            died = robot.data.body_com_pos_w[:, 0, 2].view(-1) < self.cfg.anymal_min_z_pos
+            died = (
+                robot.data.body_com_pos_w[:, 0, 2].view(-1) < self.cfg.anymal_min_z_pos
+            )
             agent_dones.append(died)
 
         return torch.any(torch.stack(agent_dones), dim=0)
 
     def _get_bar_fallen(self):
         bar_z_pos = self.object.data.body_com_pos_w[:, :, 2].view(-1)
-        bar_roll_angle = torch.abs(self.get_y_euler_from_quat(self.object.data.root_com_quat_w))
+        bar_roll_angle = torch.abs(
+            self.get_y_euler_from_quat(self.object.data.root_com_quat_w)
+        )
 
         bar_angle_maxes = bar_roll_angle > self.cfg.max_bar_roll_angle_rad
         bar_fallen = bar_z_pos < self.cfg.bar_z_min_pos
@@ -480,13 +543,17 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
 
         dones = torch.logical_or(anymal_fallen, bar_fallen)
 
-        return {key: time_out for key in self.robots.keys()}, {key: dones for key in self.robots.keys()}
+        return {key: time_out for key in self.robots.keys()}, {
+            key: dones for key in self.robots.keys()
+        }
 
     def _reset_idx(self, env_ids: torch.Tensor):
         super()._reset_idx(env_ids)
 
         object_default_state = self.object.data.default_root_state.clone()[env_ids]
-        object_default_state[:, 0:3] = object_default_state[:, 0:3] + self.scene.env_origins[env_ids]
+        object_default_state[:, 0:3] = (
+            object_default_state[:, 0:3] + self.scene.env_origins[env_ids]
+        )
         self.object.write_root_state_to_sim(object_default_state, env_ids)
         self.object.reset(env_ids)
 
@@ -494,7 +561,9 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             self.actions[agent][env_ids] = 0.0
             self.previous_actions[agent][env_ids] = 0.0
 
-        self._commands[env_ids] = torch.zeros_like(self._commands[env_ids]).uniform_(-1.0, 1.0)
+        self._commands[env_ids] = torch.zeros_like(self._commands[env_ids]).uniform_(
+            -1.0, 1.0
+        )
 
         for _, robot in self.robots.items():
             if env_ids is None or len(env_ids) == self.num_envs:
@@ -512,7 +581,7 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
 
             default_root_state = robot.data.default_root_state[env_ids].clone()
             default_root_state[:, :3] += self.scene.env_origins[env_ids]
-            
+
             robot.write_root_pose_to_sim(default_root_state[:, :7], env_ids)
             robot.write_root_velocity_to_sim(default_root_state[:, 7:], env_ids)
             robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
@@ -520,9 +589,9 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         extras = dict()
         for key in self._episode_sums.keys():
             episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
-            extras["Episode_Reward_s/" + key] = episodic_sum_avg / self.max_episode_length_s
+            extras["Episode_Reward_s/" + key] = (
+                episodic_sum_avg / self.max_episode_length_s
+            )
             self._episode_sums[key][env_ids] = 0.0
         self.extras["log"] = dict()
         self.extras["log"].update(extras)
-
-
