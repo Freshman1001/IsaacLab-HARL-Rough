@@ -15,6 +15,7 @@ from isaaclab.envs import DirectMARLEnv, DirectMARLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.markers.config import CONTACT_SENSOR_MARKER_CFG
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import ContactSensor, ContactSensorCfg
 from isaaclab.sensors import RayCaster, RayCasterCfg, patterns
@@ -173,6 +174,9 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         history_length=3,
         update_period=0.005,
         track_air_time=True,
+        visualizer_cfg=CONTACT_SENSOR_MARKER_CFG.replace(
+            prim_path="/Visuals/ContactSensor_0"
+        ),
     )
     robot_0.init_state.rot = (1.0, 0.0, 0.0, 1)
     robot_0.init_state.pos = (-1.0, 0.0, 0.5)
@@ -185,6 +189,9 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         history_length=3,
         update_period=0.005,
         track_air_time=True,
+        visualizer_cfg=CONTACT_SENSOR_MARKER_CFG.replace(
+            prim_path="/Visuals/ContactSensor_0"
+        ),
     )
     robot_1.init_state.rot = (1.0, 0.0, 0.0, 1)
     robot_1.init_state.pos = (1.0, 0.0, 0.5)
@@ -366,7 +373,6 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
                 and robot_id in self.height_scanners
             ):
                 scanner = self.height_scanners[robot_id]
-                # 计算相对高度: 扫描点Z - 击中点Z - 0.5
                 height_data = (
                     scanner.data.pos_w[:, 2].unsqueeze(1)
                     - scanner.data.ray_hits_w[..., 2]
@@ -390,6 +396,14 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             )
         # obs = torch.cat(obs, dim=0)
         # observations = {"policy": obs}
+
+        # Debug: Print the first environment's height scan
+        # if isinstance(self.cfg, AnymalCMultiAgentRoughEnvCfg):
+        #     if height_data is not None and self.episode_length_buf[0] % 50 == 0:
+        #         print("Height Data (Env 0):", height_data[0])
+        #         # verify the shape is 235
+        #         assert (obs[robot_id].shape[1] == 235), f"Observation shape is {obs[robot_id].shape[1]}, expected 235"
+
         return obs
 
     def get_y_euler_from_quat(self, quaternion):
