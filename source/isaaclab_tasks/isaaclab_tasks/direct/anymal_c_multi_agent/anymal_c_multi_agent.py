@@ -223,7 +223,7 @@ class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
         attach_yaw_only=True,
         pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
-        debug_vis=False,
+        debug_vis=True,
         mesh_prim_paths=["/World/ground"],
     )
 
@@ -232,7 +232,7 @@ class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
         attach_yaw_only=True,
         pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
-        debug_vis=False,
+        debug_vis=True,
         mesh_prim_paths=["/World/ground"],
     )
 
