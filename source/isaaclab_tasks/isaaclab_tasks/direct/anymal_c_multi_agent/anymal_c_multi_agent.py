@@ -39,8 +39,8 @@ PYRAMID_STAIRS_HEIGHT = 0.05
 PYRAMID_STAIRS_TERRAINS_CFG = TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
-    num_rows=8,
-    num_cols=8,
+    num_rows=4,
+    num_cols=4,
     horizontal_scale=0.1,
     vertical_scale=0.005,
     slope_threshold=0.75,
@@ -67,7 +67,7 @@ class EventCfg:
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot_0", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot_0"),
             "static_friction_range": (0.8, 0.8),
             "dynamic_friction_range": (0.6, 0.6),
             "restitution_range": (0.0, 0.0),
@@ -79,7 +79,7 @@ class EventCfg:
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot_1", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot_1"),
             "static_friction_range": (0.8, 0.8),
             "dynamic_friction_range": (0.6, 0.6),
             "restitution_range": (0.0, 0.0),
@@ -243,6 +243,16 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
     # reward scales
     lin_vel_reward_scale = 1.0
     yaw_rate_reward_scale = 1.0
+    base_height_target = 0.5
+    reward_scales = {
+        'base_orientation': -2.5,
+        'joint_vel': -0.0001,
+        'joint_accel': -0.00001,
+        'feet_air_time': 2.0,
+        'undesired_contact': -1.0,
+        'bar_leveling': 2.0,
+        'velocity_progress': 5.0
+    }
 
     bar_z_min_pos = 0.6
 
@@ -299,7 +309,7 @@ class AnymalCMultiAgentStairEnvCfg(AnymalCMultiAgentFlatEnvCfg):
     observation_spaces = {f"robot_{i}": 235 for i in range(2)}
     
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=64, env_spacing=8.0, replicate_physics=True
+        num_envs=16, env_spacing=8.0, replicate_physics=True
     )
 
     terrain = TerrainImporterCfg(
@@ -417,12 +427,25 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             for key in [
                 "track_lin_vel_xy_exp",
                 "track_ang_vel_z_exp",
+                "base_orientation",
+                "joint_vel",
+                "joint_accel",
+                "feet_air_time",
+                "undesired_contact",
+                "bar_leveling",
+                "velocity_progress",
             ]
         }
 
         self.base_ids = {}
         self.feet_ids = {}
         self.undesired_body_contact_ids = {}
+        
+        # Buffer to track previous joint velocities for acceleration calculation
+        self.last_joint_vel = {
+            agent: torch.zeros(self.num_envs, action_space, device=self.device)
+            for agent, action_space in self.cfg.action_spaces.items()
+        }
 
         for robot_id, contact_sensor in self.contact_sensors.items():
             _base_id, _ = contact_sensor.find_bodies("base")
@@ -639,13 +662,141 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             * self.cfg.yaw_rate_reward_scale
             * self.step_dt,
         }
-        reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
+        
+        # Initialize locomotion rewards for each agent
+        locomotion_reward = torch.zeros(self.num_envs, device=self.device)
+        
+        for robot_id, robot in self.robots.items():
+            # ===== Base Orientation Reward =====
+            # Penalize tilting away from gravity (penalize x and y components of projected gravity)
+            base_orientation_penalty = torch.square(robot.data.projected_gravity_b[:, 0]) + torch.square(robot.data.projected_gravity_b[:, 1])
+            base_orientation_reward = torch.exp(-base_orientation_penalty) * self.cfg.reward_scales['base_orientation']
+            
+            # ===== Joint Smoothness & Energy Rewards =====
+            # Penalize energy consumption (joint velocities)
+            joint_vel_penalty = torch.sum(torch.square(robot.data.joint_vel), dim=1)
+            joint_vel_reward = torch.exp(-joint_vel_penalty) * self.cfg.reward_scales['joint_vel']
+            
+            # Penalize joint acceleration (jitter) - calculate difference from last frame
+            joint_accel = robot.data.joint_vel - self.last_joint_vel[robot_id]
+            joint_accel_penalty = torch.sum(torch.square(joint_accel), dim=1)
+            joint_accel_reward = torch.exp(-joint_accel_penalty) * self.cfg.reward_scales['joint_accel']
+            
+            # Update last joint velocities for next step
+            self.last_joint_vel[robot_id] = robot.data.joint_vel.clone()
+            
+            # ===== Feet Air Time Reward =====
+            # Reward stepping gait based on feet air time when transitioning from air to contact
+            contact_sensor = self.contact_sensors[robot_id]
+            feet_air_time_reward = torch.zeros(self.num_envs, device=self.device)
+            
+            # Get air time for each foot and penalize if robot is moving (to avoid shuffling in place)
+            robot_moving = torch.norm(robot.data.root_com_lin_vel_b[:, :2], dim=1) > 0.1
+            feet_air_time = contact_sensor.data.last_air_time[:, self.feet_ids[robot_id]]
+            # Only reward if feet spent time in air and robot was moving
+            feet_air_time_reward = torch.sum(feet_air_time, dim=1) * robot_moving.float() * self.cfg.reward_scales['feet_air_time']
+            
+            # ===== Undesired Contact Reward =====
+            # Penalize contact on thighs or base
+            undesired_contact_penalty = torch.zeros(self.num_envs, device=self.device)
+            if len(self.undesired_body_contact_ids[robot_id]) > 0:
+                # Sum contact forces on undesired bodies
+                undesired_contact_forces = contact_sensor.data.net_forces_w[:, self.undesired_body_contact_ids[robot_id], :]
+                undesired_contact_penalty = torch.norm(undesired_contact_forces, dim=(1, 2))
+            undesired_contact_reward = -undesired_contact_penalty * self.cfg.reward_scales['undesired_contact']
+            
+            # Accumulate locomotion rewards for this agent
+            agent_locomotion_reward = (
+                base_orientation_reward + 
+                joint_vel_reward + 
+                joint_accel_reward + 
+                feet_air_time_reward + 
+                undesired_contact_reward
+            )
+            locomotion_reward += agent_locomotion_reward
+        
+        # Combine bar tracking and locomotion rewards
+        bar_reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
+        
+        # ===== Bar Leveling Reward =====
+        # Encourage keeping the carrying bar horizontal by penalizing orientation deviation
+        # Use the quaternion to measure tilt - penalize x and y components (roll and pitch)
+        bar_quat = self.object.data.root_com_quat_w
+        # For a level bar, the quaternion should be close to [1, 0, 0, 0] (or [-1, 0, 0, 0])
+        # Penalize deviation in x and y components which represent tilt
+        bar_orientation_penalty = torch.square(bar_quat[:, 1]) + torch.square(bar_quat[:, 2])
+        # Use Gaussian kernel for dense reward
+        sigma_bar = 0.1
+        bar_leveling_reward = torch.exp(-bar_orientation_penalty / sigma_bar) * self.cfg.reward_scales['bar_leveling']
+        
+        # ===== Positive Velocity Progress Reward =====
+        # Reward the bar for moving in the direction of the command, penalize backward motion
+        # Extract target XY velocity from commands and actual XY velocity from bar
+        target_vel_xy = bar_commands[:, :2]  # Target velocity from commands
+        actual_vel_xy = self.object.data.root_com_lin_vel_b[:, :2]  # Actual bar velocity
+        
+        # Calculate dot product (progress): positive when moving with command, negative when moving against
+        progress = torch.sum(target_vel_xy * actual_vel_xy, dim=1)
+        
+        # Apply asymmetric penalty: reward forward motion, 2x penalize backward motion
+        velocity_progress_reward = torch.where(
+            progress > 0,
+            progress,
+            progress * 2.0
+        ) * self.cfg.reward_scales['velocity_progress'] * self.step_dt
+        
+        total_reward = bar_reward + locomotion_reward + bar_leveling_reward + velocity_progress_reward
 
         # Logging
         for key, value in rewards.items():
             self._episode_sums[key] += value
+        
+        # Log locomotion reward components
+        locomotion_reward_per_agent = torch.zeros(self.num_envs, device=self.device)
+        base_orientation_reward_total = torch.zeros(self.num_envs, device=self.device)
+        joint_vel_reward_total = torch.zeros(self.num_envs, device=self.device)
+        joint_accel_reward_total = torch.zeros(self.num_envs, device=self.device)
+        feet_air_time_reward_total = torch.zeros(self.num_envs, device=self.device)
+        undesired_contact_reward_total = torch.zeros(self.num_envs, device=self.device)
+        
+        # Recompute each component for logging
+        for robot_id, robot in self.robots.items():
+            base_orientation_penalty = torch.square(robot.data.projected_gravity_b[:, 0]) + torch.square(robot.data.projected_gravity_b[:, 1])
+            base_orientation_reward = torch.exp(-base_orientation_penalty) * self.cfg.reward_scales['base_orientation']
+            base_orientation_reward_total += base_orientation_reward
+            
+            joint_vel_penalty = torch.sum(torch.square(robot.data.joint_vel), dim=1)
+            joint_vel_reward = torch.exp(-joint_vel_penalty) * self.cfg.reward_scales['joint_vel']
+            joint_vel_reward_total += joint_vel_reward
+            
+            joint_accel = robot.data.joint_vel - self.last_joint_vel[robot_id]
+            joint_accel_penalty = torch.sum(torch.square(joint_accel), dim=1)
+            joint_accel_reward = torch.exp(-joint_accel_penalty) * self.cfg.reward_scales['joint_accel']
+            joint_accel_reward_total += joint_accel_reward
+            
+            contact_sensor = self.contact_sensors[robot_id]
+            robot_moving = torch.norm(robot.data.root_com_lin_vel_b[:, :2], dim=1) > 0.1
+            feet_air_time = contact_sensor.data.last_air_time[:, self.feet_ids[robot_id]]
+            feet_air_time_reward = torch.sum(feet_air_time, dim=1) * robot_moving.float() * self.cfg.reward_scales['feet_air_time']
+            feet_air_time_reward_total += feet_air_time_reward
+            
+            undesired_contact_penalty = torch.zeros(self.num_envs, device=self.device)
+            if len(self.undesired_body_contact_ids[robot_id]) > 0:
+                undesired_contact_forces = contact_sensor.data.net_forces_w[:, self.undesired_body_contact_ids[robot_id], :]
+                undesired_contact_penalty = torch.norm(undesired_contact_forces, dim=(1, 2))
+            undesired_contact_reward = -undesired_contact_penalty * self.cfg.reward_scales['undesired_contact']
+            undesired_contact_reward_total += undesired_contact_reward
+        
+        # Update episode sums for all components
+        self._episode_sums['base_orientation'] += base_orientation_reward_total
+        self._episode_sums['joint_vel'] += joint_vel_reward_total
+        self._episode_sums['joint_accel'] += joint_accel_reward_total
+        self._episode_sums['feet_air_time'] += feet_air_time_reward_total
+        self._episode_sums['undesired_contact'] += undesired_contact_reward_total
+        self._episode_sums['bar_leveling'] += bar_leveling_reward
+        self._episode_sums['velocity_progress'] += velocity_progress_reward
 
-        return {"robot_0": reward, "robot_1": reward}
+        return {"robot_0": total_reward, "robot_1": total_reward}
 
     def _get_anymal_fallen(self):
         agent_dones = []
