@@ -34,12 +34,13 @@ import isaaclab.terrains as terrain_gen
 from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 
 
-# Pyramid Stairs Terrain Configuration
+# Pyramid Stairs Terrain Configuration - Multi-Environment with Multiple Staircases
+PYRAMID_STAIRS_HEIGHT = 0.05
 PYRAMID_STAIRS_TERRAINS_CFG = TerrainGeneratorCfg(
     size=(8.0, 8.0),
     border_width=20.0,
-    num_rows=1,
-    num_cols=1,
+    num_rows=8,
+    num_cols=8,
     horizontal_scale=0.1,
     vertical_scale=0.005,
     slope_threshold=0.75,
@@ -47,15 +48,15 @@ PYRAMID_STAIRS_TERRAINS_CFG = TerrainGeneratorCfg(
     sub_terrains={
         "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
             proportion=1.0,
-            step_height_range=(0.02, 0.08),
+            step_height_range=(PYRAMID_STAIRS_HEIGHT, PYRAMID_STAIRS_HEIGHT),
             step_width=0.6,
-            platform_width=3.0,
+            platform_width=4.0,
             border_width=1.0,
             holes=False,
         ),
     },
 )
-"""Pyramid stairs terrain configuration."""
+"""Pyramid stairs terrain configuration with multiple environments."""
 
 
 @configclass
@@ -258,7 +259,7 @@ class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
         prim_path="/World/ground",
         terrain_type="generator",
         terrain_generator=ROUGH_TERRAINS_CFG,
-        max_init_terrain_level=9,
+        max_init_terrain_level=0,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
@@ -296,6 +297,10 @@ class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
 class AnymalCMultiAgentStairEnvCfg(AnymalCMultiAgentFlatEnvCfg):
     observation_space = 235
     observation_spaces = {f"robot_{i}": 235 for i in range(2)}
+    
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(
+        num_envs=64, env_spacing=8.0, replicate_physics=True
+    )
 
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
@@ -332,6 +337,54 @@ class AnymalCMultiAgentStairEnvCfg(AnymalCMultiAgentFlatEnvCfg):
         pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
         debug_vis=True,
         mesh_prim_paths=["/World/ground"],
+    )
+
+    # robot
+    robot_0: ArticulationCfg = ANYMAL_C_CFG.replace(
+        prim_path="/World/envs/env_.*/Robot_0"
+    )
+    contact_sensor_0: ContactSensorCfg = ContactSensorCfg(
+        prim_path="/World/envs/env_.*/Robot_0/.*",
+        history_length=3,
+        update_period=0.005,
+        track_air_time=True,
+        visualizer_cfg=CONTACT_SENSOR_MARKER_CFG.replace(
+            prim_path="/Visuals/ContactSensor_0"
+        ),
+    )
+    robot_0.init_state.rot = (1.0, 0.0, 0.0, 1)
+    robot_0.init_state.pos = (-1.0, 0.0, 0.5 + PYRAMID_STAIRS_HEIGHT * 3)
+
+    robot_1: ArticulationCfg = ANYMAL_C_CFG.replace(
+        prim_path="/World/envs/env_.*/Robot_1"
+    )
+    contact_sensor_1: ContactSensorCfg = ContactSensorCfg(
+        prim_path="/World/envs/env_.*/Robot_1/.*",
+        history_length=3,
+        update_period=0.005,
+        track_air_time=True,
+        visualizer_cfg=CONTACT_SENSOR_MARKER_CFG.replace(
+            prim_path="/Visuals/ContactSensor_0"
+        ),
+    )
+    robot_1.init_state.rot = (1.0, 0.0, 0.0, 1)
+    robot_1.init_state.pos = (1.0, 0.0, 0.5 + PYRAMID_STAIRS_HEIGHT * 3)
+
+    # rec prism
+    cfg_rec_prism = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/Object",
+        spawn=sim_utils.CuboidCfg(
+            size=(5, 0.1, 0.1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+            mass_props=sim_utils.MassPropertiesCfg(
+                mass=0.01
+            ),  # changed from 1.0 to 0.5
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 1.0, 0.0)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(
+            pos=(0.0, 0, 0.61 + PYRAMID_STAIRS_HEIGHT * 3), rot=(1.0, 0.0, 0.0, 0.0)
+        ),  # started the bar lower
     )
 
 

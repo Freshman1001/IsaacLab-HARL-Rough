@@ -16,11 +16,11 @@ parser.add_argument("--video", action="store_true", help="Record videos during t
 parser.add_argument("--video_length", type=int, default=500, help="Length of the recorded video (in steps).")
 parser.add_argument("--video_interval", type=int, default=10000, help="Interval between video recordings (in steps).")
 parser.add_argument("--num_envs", type=int, default=64, help="Number of environments to simulate.")
-parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Rough-Anymal-C-Direct-v0", help="Name of the task.")
+parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Stairs-Anymal-C-Direct-v0", help="Name of the task.")
 parser.add_argument("--seed", type=int, default=1, help="Seed used for the environment")
 parser.add_argument("--save_interval", type=int, default=10000, help="How often to save the model")
 parser.add_argument("--log_interval", type=int, default=1, help="How often to log outputs")
-parser.add_argument("--exp_name", type=str, default="multi_agent_anymal_rough_harl", help="Name of the Experiment")
+parser.add_argument("--exp_name", type=str, default="debug_multi_agent_anymal_rough_harl", help="Name of the Experiment")
 parser.add_argument("--num_env_steps", type=int, default=100000000, help="RL Policy training iterations.")
 parser.add_argument("--dir", type=str, default=None, help="folder with trained models")
 
