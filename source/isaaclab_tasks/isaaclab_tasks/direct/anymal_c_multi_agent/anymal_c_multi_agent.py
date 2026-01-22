@@ -30,6 +30,32 @@ from isaaclab.utils.math import quat_from_angle_axis
 ##
 from isaaclab_assets.robots.anymal import ANYMAL_C_CFG  # isort: skip
 from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG  # isort: skip
+import isaaclab.terrains as terrain_gen
+from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
+
+
+# Pyramid Stairs Terrain Configuration
+PYRAMID_STAIRS_TERRAINS_CFG = TerrainGeneratorCfg(
+    size=(8.0, 8.0),
+    border_width=20.0,
+    num_rows=1,
+    num_cols=1,
+    horizontal_scale=0.1,
+    vertical_scale=0.005,
+    slope_threshold=0.75,
+    use_cache=False,
+    sub_terrains={
+        "pyramid_stairs": terrain_gen.MeshPyramidStairsTerrainCfg(
+            proportion=1.0,
+            step_height_range=(0.02, 0.08),
+            step_width=0.6,
+            platform_width=3.0,
+            border_width=1.0,
+            holes=False,
+        ),
+    },
+)
+"""Pyramid stairs terrain configuration."""
 
 
 @configclass
@@ -266,12 +292,55 @@ class AnymalCMultiAgentRoughEnvCfg(AnymalCMultiAgentFlatEnvCfg):
     )
 
 
+@configclass
+class AnymalCMultiAgentStairEnvCfg(AnymalCMultiAgentFlatEnvCfg):
+    observation_space = 235
+    observation_spaces = {f"robot_{i}": 235 for i in range(2)}
+
+    terrain = TerrainImporterCfg(
+        prim_path="/World/ground",
+        terrain_type="generator",
+        terrain_generator=PYRAMID_STAIRS_TERRAINS_CFG,
+        max_init_terrain_level=0,
+        collision_group=-1,
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
+            static_friction=1.0,
+            dynamic_friction=1.0,
+        ),
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Architecture/Shingles_01.mdl",
+            project_uvw=True,
+        ),
+        debug_vis=False,
+    )
+
+    height_scanner_0 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot_0/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        attach_yaw_only=True,
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+        debug_vis=True,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+    height_scanner_1 = RayCasterCfg(
+        prim_path="/World/envs/env_.*/Robot_1/base",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
+        attach_yaw_only=True,
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.6, 1.0]),
+        debug_vis=True,
+        mesh_prim_paths=["/World/ground"],
+    )
+
+
 class AnymalCMultiAgentBar(DirectMARLEnv):
-    cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg
+    cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg | AnymalCMultiAgentStairEnvCfg
 
     def __init__(
         self,
-        cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg,
+        cfg: AnymalCMultiAgentFlatEnvCfg | AnymalCMultiAgentRoughEnvCfg | AnymalCMultiAgentStairEnvCfg,
         render_mode: str | None = None,
         **kwargs,
     ):
@@ -369,7 +438,7 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             height_data = None
 
             if (
-                isinstance(self.cfg, AnymalCMultiAgentRoughEnvCfg)
+                isinstance(self.cfg, (AnymalCMultiAgentRoughEnvCfg, AnymalCMultiAgentStairEnvCfg))
                 and robot_id in self.height_scanners
             ):
                 scanner = self.height_scanners[robot_id]
