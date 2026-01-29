@@ -32,10 +32,10 @@ parser.add_argument(
     ],
     help="Algorithm name. Choose from: happo, hatrpo, haa2c, haddpg, hatd3, hasac, had3qn, maddpg, matd3, mappo.",
 )
-parser.add_argument("--num_envs", type=int, default=16, help="Number of environments to simulate.")
-parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Rough-Anymal-C-Direct-v0", help="Name of the task.")
+parser.add_argument("--num_envs", type=int, default=64, help="Number of environments to simulate.")
+parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Stairs-Anymal-C-Direct-v0", help="Name of the task.")
 parser.add_argument("--seed", type=int, default=1, help="Seed used for the environment")
-parser.add_argument("--num_env_steps", type=int, default=1000000, help="RL Policy training iterations.")
+parser.add_argument("--num_env_steps", type=int, default=100000000, help="RL Policy training iterations.")
 parser.add_argument("--dir", type=str, default=None, help="folder with trained models")
 
 # append AppLauncher cli args
@@ -159,3 +159,4 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 if __name__ == "__main__":
     main()
     simulation_app.close()
+
