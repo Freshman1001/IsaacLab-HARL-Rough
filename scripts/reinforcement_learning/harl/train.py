@@ -20,7 +20,7 @@ parser.add_argument("--task", type=str, default="Isaac-Multi-Agent-Stairs-Anymal
 parser.add_argument("--seed", type=int, default=1, help="Seed used for the environment")
 parser.add_argument("--save_interval", type=int, default=10000, help="How often to save the model")
 parser.add_argument("--log_interval", type=int, default=1, help="How often to log outputs")
-parser.add_argument("--exp_name", type=str, default="debug_multi_agent_anymal_rough_harl", help="Name of the Experiment")
+parser.add_argument("--exp_name", type=str, default="multi_agent_anymal_pyramid_harl", help="Name of the Experiment")
 parser.add_argument("--num_env_steps", type=int, default=100000000, help="RL Policy training iterations.")
 parser.add_argument("--dir", type=str, default=None, help="folder with trained models")
 
