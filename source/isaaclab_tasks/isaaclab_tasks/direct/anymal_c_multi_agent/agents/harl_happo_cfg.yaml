@@ -49,7 +49,7 @@ model:
   # hidden sizes for mlp module in the network
   hidden_sizes: [128, 128]
   # activation function, choose from sigmoid, tanh, relu, leaky_relu, selu
-  activation_func: relu
+  activation_func: tanh
   # whether to use feature normalization
   use_feature_normalization: True
   # initialization method for network parameters, choose from xavier_uniform_, orthogonal_, ...
@@ -67,13 +67,13 @@ model:
   data_chunk_length: 10
   # optimizer parameters
   # actor learning rate
-  lr: 0.0005
+  lr: 0.0003
   # critic learning rate
-  critic_lr: 0.0005
+  critic_lr: 0.0003
   # eps in Adam
   opti_eps: 0.00001
   # weight_decay in Adam
-  weight_decay: 0
+  weight_decay: 1e-5
   # parameters of diagonal Gaussian distribution
   std_x_coef: 1
   # parameters of diagonal Gaussian distribution
@@ -87,7 +87,7 @@ algo:
   # whether to use clipped value loss
   use_clipped_value_loss: True
   # clip parameter
-  clip_param: 0.2
+  clip_param: 0.1
   # number of mini-batches per epoch for actor update
   actor_num_mini_batch: 1
   # number of mini-batches per epoch for critic update
