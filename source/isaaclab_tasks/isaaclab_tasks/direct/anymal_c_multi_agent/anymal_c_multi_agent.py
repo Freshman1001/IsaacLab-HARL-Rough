@@ -3,6 +3,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+# TODO: ADD PENELTY IF THE BAR OUT OF BOUND OF BASE(EXP MAPPING, RELATIVE POS), SCALE ALIGN WITH BAR LEVELING PENELTY.
+
 from __future__ import annotations
 
 import copy
