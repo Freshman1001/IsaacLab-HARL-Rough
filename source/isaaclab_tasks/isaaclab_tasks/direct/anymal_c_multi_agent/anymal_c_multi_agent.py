@@ -3,8 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-# TODO: ADD PENELTY IF THE BAR OUT OF BOUND OF BASE(EXP MAPPING, RELATIVE POS), SCALE ALIGN WITH BAR LEVELING PENELTY.
-
 from __future__ import annotations
 
 import copy
@@ -256,6 +254,7 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         "undesired_contact": -0.001,
         # cooperation
         "bar_leveling": 4.0,
+        "robot_stick_rel_pos_dist": -0.5,
         "velocity_progress": 1.0,  # prevent reversing
     }
 
@@ -441,6 +440,7 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
                 "track_lin_vel_xy_exp",
                 "track_ang_vel_z_exp",
                 "bar_leveling",
+                "robot_stick_rel_pos_dist",
             ]
         }
 
@@ -670,6 +670,17 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             "track_ang_vel_z_exp": yaw_rate_error_mapped
             * self.cfg.yaw_rate_reward_scale,
         }
+
+        # Calculate sum of relative positions (distances) between robots and the bar
+        bar_pos = self.object.data.root_pos_w
+        total_dist = torch.zeros(self.num_envs, device=self.device)
+        for robot in self.robots.values():
+            # Euclidean distance between robot root and bar root
+            dist = torch.norm(robot.data.root_pos_w - bar_pos, dim=1)
+            total_dist += dist
+            
+        rewards["robot_stick_rel_pos_dist"] = total_dist * self.cfg.reward_scales["robot_stick_rel_pos_dist"]
+
 
         # Combine bar tracking rewards
         bar_reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
