@@ -23,7 +23,7 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.math import quat_from_angle_axis
+from isaaclab.utils.math import quat_from_angle_axis, quat_rotate
 
 ##
 # Pre-defined configs
@@ -239,11 +239,10 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         ),  # started the bar lower
     )
 
-    # reward scales
-    lin_vel_reward_scale = 2.0
-    yaw_rate_reward_scale = 1.0
-    base_height_target = 0.5
     reward_scales = {
+        # goal
+        "track_lin_vel_xy_exp": 2.0,
+        "track_ang_vel_z_exp": 1.0,
         # motion
         "base_orientation": -0.4,
         "feet_air_time": 1.0,
@@ -254,8 +253,8 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
         "undesired_contact": -0.001,
         # cooperation
         "bar_leveling": 4.0,
-        "robot_stick_rel_pos_dist": -0.5,
-        "velocity_progress": 1.0,  # prevent reversing
+        "robot_bar_rel_pos_dist": -0.5,
+        "velocity_progress": 1.0,
     }
 
     bar_z_min_pos = 0.6
@@ -440,7 +439,7 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
                 "track_lin_vel_xy_exp",
                 "track_ang_vel_z_exp",
                 "bar_leveling",
-                "robot_stick_rel_pos_dist",
+                "robot_bar_rel_pos_dist",
             ]
         }
 
@@ -461,6 +460,16 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             self.base_ids[robot_id] = _base_id
             self.feet_ids[robot_id] = _feet_ids
             self.undesired_body_contact_ids[robot_id] = _undesired_contact_body_ids
+
+        # Offset to calculate relative position
+        self.target_offsets = {}
+        bar_init_pos = torch.tensor(
+            self.cfg.cfg_rec_prism.init_state.pos, device=self.device
+        )
+        r0_init_pos = torch.tensor(self.cfg.robot_0.init_state.pos, device=self.device)
+        r1_init_pos = torch.tensor(self.cfg.robot_1.init_state.pos, device=self.device)
+        self.target_offsets["robot_0"] = r0_init_pos - bar_init_pos
+        self.target_offsets["robot_1"] = r1_init_pos - bar_init_pos
 
     def _setup_scene(self):
         self.num_robots = sum(1 for key in self.cfg.__dict__.keys() if "robot_" in key)
@@ -649,7 +658,8 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
 
         self._draw_markers(bar_commands)
 
-        # xy linear velocity tracking - Linear-to-Quadratic (Huber) Approach
+        # Shared Rewards
+        # Bar xy linear velocity tracking
         lin_vel_error = torch.sum(
             torch.square(
                 bar_commands[:, :2] - self.object.data.root_com_lin_vel_b[:, :2]
@@ -658,57 +668,60 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
         )
         lin_vel_error_mapped = 1.0 / (1.0 + lin_vel_error + lin_vel_error**2)
 
-        # yaw rate tracking - Linear-to-Quadratic (Huber) Approach
+        # Bar yaw rate tracking
         yaw_rate_error = torch.square(
             self._commands[:, 2] - self.object.data.root_com_ang_vel_b[:, 2]
         )
         yaw_rate_error_mapped = 1.0 / (1.0 + yaw_rate_error + yaw_rate_error**2)
 
-        rewards = {
-            "track_lin_vel_xy_exp": lin_vel_error_mapped
-            * self.cfg.lin_vel_reward_scale,
-            "track_ang_vel_z_exp": yaw_rate_error_mapped
-            * self.cfg.yaw_rate_reward_scale,
-        }
-
-        # Calculate sum of relative positions (distances) between robots and the bar
-        bar_pos = self.object.data.root_pos_w
-        total_dist = torch.zeros(self.num_envs, device=self.device)
-        for robot in self.robots.values():
-            # Euclidean distance between robot root and bar root
-            dist = torch.norm(robot.data.root_pos_w - bar_pos, dim=1)
-            total_dist += dist
-            
-        rewards["robot_stick_rel_pos_dist"] = total_dist * self.cfg.reward_scales["robot_stick_rel_pos_dist"]
-
-
-        # Combine bar tracking rewards
-        bar_reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
-
-        # ===== Bar Leveling Reward =====
-        # Encourage keeping the carrying bar horizontal by penalizing orientation deviation
-        # Use the quaternion to measure tilt - penalize x and y components (roll and pitch)
+        # Bar Leveling Reward
         bar_quat = self.object.data.root_com_quat_w
-        # For a level bar, the quaternion should be close to [1, 0, 0, 0] (or [-1, 0, 0, 0])
-        # Penalize deviation in x and y components which represent tilt
         bar_orientation_penalty = torch.square(bar_quat[:, 1]) + torch.square(
             bar_quat[:, 2]
         )
-        # Use Gaussian kernel for dense reward
         sigma_bar = 0.1
-        bar_leveling_reward = (
-            torch.exp(-bar_orientation_penalty / sigma_bar)
-            * self.cfg.reward_scales["bar_leveling"]
+        bar_leveling_reward = torch.exp(-bar_orientation_penalty / sigma_bar)
+
+        # Calculate shared component of the reward
+        shared_reward = (
+            lin_vel_error_mapped * self.cfg.reward_scales["track_lin_vel_xy_exp"]
+            + yaw_rate_error_mapped * self.cfg.reward_scales["track_ang_vel_z_exp"]
+            + bar_leveling_reward * self.cfg.reward_scales["bar_leveling"]
         )
 
-        total_reward = bar_reward + bar_leveling_reward
+        # Individual Rewards
+        bar_pos = self.object.data.root_pos_w
+        individual_rewards = {}
+        total_dist_for_log = torch.zeros(self.num_envs, device=self.device)
+
+        for robot_id, robot in self.robots.items():
+            target_offset_local = self.target_offsets[robot_id].repeat(self.num_envs, 1)
+            target_offset_world = quat_rotate(bar_quat, target_offset_local)
+            target_pos_world = bar_pos + target_offset_world
+
+            current_robot_pos = robot.data.root_pos_w
+            dist = torch.norm(current_robot_pos - target_pos_world, dim=1)
+
+            individual_rewards[robot_id] = shared_reward + (
+                dist * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
+            )
+            total_dist_for_log += dist
 
         # Logging
-        for key, value in rewards.items():
-            self._episode_sums[key] += value
-        self._episode_sums["bar_leveling"] += bar_leveling_reward
+        self._episode_sums["track_lin_vel_xy_exp"] += (
+            lin_vel_error_mapped * self.cfg.reward_scales["track_lin_vel_xy_exp"]
+        )
+        self._episode_sums["track_ang_vel_z_exp"] += (
+            yaw_rate_error_mapped * self.cfg.reward_scales["track_ang_vel_z_exp"]
+        )
+        self._episode_sums["bar_leveling"] += (
+            bar_leveling_reward * self.cfg.reward_scales["bar_leveling"]
+        )
+        self._episode_sums["robot_bar_rel_pos_dist"] += (
+            total_dist_for_log * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
+        )
 
-        return {"robot_0": total_reward, "robot_1": total_reward}
+        return individual_rewards
 
     def _get_anymal_fallen(self):
         agent_dones = []
