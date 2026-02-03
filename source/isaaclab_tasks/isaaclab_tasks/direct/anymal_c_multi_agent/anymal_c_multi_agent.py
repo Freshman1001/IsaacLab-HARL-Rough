@@ -242,19 +242,19 @@ class AnymalCMultiAgentFlatEnvCfg(DirectMARLEnvCfg):
     reward_scales = {
         # goal
         "track_lin_vel_xy_exp": 2.0,
-        "track_ang_vel_z_exp": 1.0,
+        "track_ang_vel_z_exp": 2.0,
         # motion
-        "base_orientation": -0.4,
-        "feet_air_time": 1.0,
+        # "base_orientation": -0.4,
+        # "feet_air_time": 1.0,
         # reg
-        "joint_vel": -0.01,
-        "joint_accel": -2.0e-6,
+        # "joint_vel": -0.01,
+        # "joint_accel": -2.0e-6,
         # articulation
-        "undesired_contact": -0.001,
+        # "undesired_contact": -0.001,
         # cooperation
-        "bar_leveling": 4.0,
-        "robot_bar_rel_pos_dist": -0.5,
-        "velocity_progress": 1.0,
+        # "velocity_progress": 1.0,
+        "bar_leveling": 1.0,
+        "robot_bar_rel_pos_dist": 1.0,
     }
 
     bar_z_min_pos = 0.6
@@ -658,41 +658,45 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
 
         self._draw_markers(bar_commands)
 
+        # Gaussian sigmas
+        sigma_lin_vel = 0.3
+        sigma_ang_vel = 0.3
+        sigma_bar_level = 0.15
+        sigma_dist = 0.15
+
         # Shared Rewards
         # Bar xy linear velocity tracking
-        lin_vel_error = torch.sum(
+        lin_vel_error_sq = torch.sum(
             torch.square(
                 bar_commands[:, :2] - self.object.data.root_com_lin_vel_b[:, :2]
             ),
             dim=1,
         )
-        lin_vel_error_mapped = 1.0 / (1.0 + lin_vel_error + lin_vel_error**2)
+        lin_vel_reward = torch.exp(-lin_vel_error_sq / sigma_lin_vel)
 
         # Bar yaw rate tracking
-        yaw_rate_error = torch.square(
+        yaw_rate_error_sq = torch.square(
             self._commands[:, 2] - self.object.data.root_com_ang_vel_b[:, 2]
         )
-        yaw_rate_error_mapped = 1.0 / (1.0 + yaw_rate_error + yaw_rate_error**2)
+        yaw_rate_reward = torch.exp(-yaw_rate_error_sq / sigma_ang_vel)
 
         # Bar Leveling Reward
         bar_quat = self.object.data.root_com_quat_w
-        bar_orientation_penalty = torch.square(bar_quat[:, 1]) + torch.square(
-            bar_quat[:, 2]
-        )
-        sigma_bar = 0.1
-        bar_leveling_reward = torch.exp(-bar_orientation_penalty / sigma_bar)
+        bar_orientation_error_sq = torch.square(bar_quat[:, 1]) + torch.square(bar_quat[:, 2])
+        bar_leveling_reward = torch.exp(-bar_orientation_error_sq / sigma_bar_level)
 
-        # Calculate shared component of the reward
+        # Calculate Shared Reward 
         shared_reward = (
-            lin_vel_error_mapped * self.cfg.reward_scales["track_lin_vel_xy_exp"]
-            + yaw_rate_error_mapped * self.cfg.reward_scales["track_ang_vel_z_exp"]
+            lin_vel_reward * self.cfg.reward_scales["track_lin_vel_xy_exp"]
+            + yaw_rate_reward * self.cfg.reward_scales["track_ang_vel_z_exp"]
             + bar_leveling_reward * self.cfg.reward_scales["bar_leveling"]
         )
 
         # Individual Rewards
+        # Robot-Bar Relative Positioning
         bar_pos = self.object.data.root_pos_w
         individual_rewards = {}
-        total_dist_for_log = torch.zeros(self.num_envs, device=self.device)
+        total_pos_reward_for_log = torch.zeros(self.num_envs, device=self.device)
 
         for robot_id, robot in self.robots.items():
             target_offset_local = self.target_offsets[robot_id].repeat(self.num_envs, 1)
@@ -700,25 +704,26 @@ class AnymalCMultiAgentBar(DirectMARLEnv):
             target_pos_world = bar_pos + target_offset_world
 
             current_robot_pos = robot.data.root_pos_w
-            dist = torch.norm(current_robot_pos - target_pos_world, dim=1)
+            dist_sq = torch.sum(torch.square(current_robot_pos - target_pos_world), dim=1)
+            dist_reward = torch.exp(-dist_sq / sigma_dist)
 
             individual_rewards[robot_id] = shared_reward + (
-                dist * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
+                dist_reward * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
             )
-            total_dist_for_log += dist
+            total_pos_reward_for_log += dist_reward
 
         # Logging
         self._episode_sums["track_lin_vel_xy_exp"] += (
-            lin_vel_error_mapped * self.cfg.reward_scales["track_lin_vel_xy_exp"]
+            lin_vel_reward * self.cfg.reward_scales["track_lin_vel_xy_exp"]
         )
         self._episode_sums["track_ang_vel_z_exp"] += (
-            yaw_rate_error_mapped * self.cfg.reward_scales["track_ang_vel_z_exp"]
+            yaw_rate_reward * self.cfg.reward_scales["track_ang_vel_z_exp"]
         )
         self._episode_sums["bar_leveling"] += (
             bar_leveling_reward * self.cfg.reward_scales["bar_leveling"]
         )
         self._episode_sums["robot_bar_rel_pos_dist"] += (
-            total_dist_for_log * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
+            total_pos_reward_for_log * self.cfg.reward_scales["robot_bar_rel_pos_dist"]
         )
 
         return individual_rewards
